@@ -49,6 +49,9 @@ public final class WorkspaceEngine {
     /// Handles to parked windows: they still work when the window isn't listed (from another
     /// desktop), so quitting can always put every parked window back.
     @ObservationIgnored private var parkedHandles: [CGWindowID: WindowHandle] = [:]
+    /// Each window's last frame seen on screen (from listings, and when it parks): where it goes
+    /// back if it's ever found out of sight without a parked spot to return to.
+    @ObservationIgnored private var lastOnScreen: [CGWindowID: CGRect] = [:]
     /// The windows last listed on HyprDesk's desktop (minimized ones left out), to recognize
     /// it after a desktop change.
     @ObservationIgnored private var homeWindows: Set<CGWindowID> = []
@@ -404,6 +407,24 @@ public final class WorkspaceEngine {
         }
         inventory.move(unparking)
 
+        // Shown but out of sight without being parked: its parked spot was lost somehow. It goes
+        // back where it was last seen on screen (centered only if it never was). The listing
+        // picks candidates; the app confirms.
+        let unparked = Set(unparking.map(\.window.id))
+        let strandedCandidates = windows.filter {
+            spaces.isShown($0) && parked[$0.id] == nil && !unparked.contains($0.id) && !$0.isMinimized
+                && ScreenGeometry.isMostlyOffscreen($0.frame, in: screens)
+        }
+        let strandedFrames = inventory.frames(of: strandedCandidates)
+        let rescuing = strandedCandidates.compactMap { window -> (window: WindowInfo, origin: CGPoint)? in
+            guard let frame = strandedFrames[window.id], ScreenGeometry.isMostlyOffscreen(frame, in: screens) else { return nil }
+            let known = lastOnScreen[window.id].map { CGRect(origin: $0.origin, size: frame.size) }
+            let home = known.flatMap { ScreenGeometry.isMostlyOffscreen($0, in: screens) ? nil : $0 }
+            Self.log.info("rescued \(window.appName, privacy: .public) “\(window.title, privacy: .public)”: shown but out of sight, \(home == nil ? "centered" : "back where it was", privacy: .public)")
+            return (window, (home ?? ScreenGeometry.onScreen(frame, in: screens)).origin)
+        }
+        inventory.move(rescuing)
+
         // 2. Out of sight. "Parked" means mostly off screen, not an exact spot: macOS clamps where a
         // window may go. A parked window still out of sight by the last listing needs nothing;
         // the others are asked where they are (the listing can lag behind a move).
@@ -419,12 +440,13 @@ public final class WorkspaceEngine {
             // Otherwise this is its real frame; never remember a hidden spot as one.
             let real = parked[window.id] ?? ScreenGeometry.onScreen(frame, in: screens)
             parked[window.id] = real
+            lastOnScreen[window.id] = real
             if parkedHandles[window.id] == nil { parkedHandles[window.id] = inventory.handle(for: window) }
             parking.append((window, ScreenGeometry.parkingOrigin(for: CGRect(origin: real.origin, size: frame.size), in: screens)))
         }
         inventory.move(parking)
         saveRecovery()
-        return unparking.count + parking.count
+        return unparking.count + rescuing.count + parking.count
     }
 
     // MARK: Editing (keeps the screen in line)
@@ -496,8 +518,17 @@ public final class WorkspaceEngine {
         // are forgotten. Anything unplaced here was open before we saw it: it's being restored.
         spaces.place(windows, restoring: { _ in true })
         spaces.windowsChanged(windows, runningApps: Self.runningApps())
+        // Where every window on screen is, in case it ever needs putting back without a parked spot.
+        let screens = ScreenGeometry.screens()
+        for window in windows where parked[window.id] == nil && !window.isMinimized
+            && spaces.placement(of: window)?.placement != .scratchpad
+            && !ScreenGeometry.isMostlyOffscreen(window.frame, in: screens) {
+            lastOnScreen[window.id] = window.frame
+        }
         // A parked window that isn't listed is only forgotten once it's really gone.
         let ids = Set(windows.map(\.id))
+        // Kept through gaps in the listing (that's when it's needed); trimmed only once it grows.
+        if lastOnScreen.count > 1000 { lastOnScreen = lastOnScreen.filter { ids.contains($0.key) || parked[$0.key] != nil } }
         for id in parked.keys where !ids.contains(id) {
             if let handle = parkedHandles[id], inventory.exists(handle) { continue }
             parked[id] = nil

@@ -176,11 +176,12 @@ public final class WindowInventory {
         perApp(windows.compactMap(handle(for:))) { _, element in AX.frame(element) }
     }
 
-    /// Whether the window behind `handle` still exists (listed or not).
+    /// Whether the window behind `handle` still exists (listed or not). An app that doesn't
+    /// answer in time still has it: only a dead element means gone.
     public func exists(_ handle: WindowHandle) -> Bool {
         var role: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(handle.element, kAXRoleAttribute as CFString, &role)
-        return result != .invalidUIElement && result != .cannotComplete
+        return result != .invalidUIElement
     }
 
     /// A lasting reference to `window`, usable after it drops out of the listing.
@@ -248,13 +249,24 @@ public final class WindowInventory {
         AXUIElementSetMessagingTimeout(root, 0.25)
         observe(pid, root)
         let name = app.localizedName ?? app.bundleIdentifier ?? "pid \(pid)"
+        // An app that doesn't answer in time (busy, or just woken from sleep) keeps its last
+        // listing: taken as "no windows", its windows would be forgotten while still open.
+        guard let listed = AX.elementsIfAnswered(root, kAXWindowsAttribute) else { return [] }
+        let known = Dictionary((ledger.byApp[pid] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var windows: [WindowInfo] = []
-        for id in ledger.byApp[pid]?.map(\.id) ?? [] { elements[id] = nil }
-        for element in AX.elements(root, kAXWindowsAttribute) {
-            guard AX.string(element, kAXSubroleAttribute) == kAXStandardWindowSubrole as String,
-                  let id = AX.windowID(element) else { continue }
+        for id in known.keys { elements[id] = nil }
+        for element in listed {
+            guard let id = AX.windowID(element) else { continue }
             // A hung app must not hold a switch for the default 6 s.
             AXUIElementSetMessagingTimeout(element, 0.25)
+            var subrole: CFTypeRef?
+            let answer = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
+            // No answer in time: a window we knew stays as it was, rather than dropping out.
+            if answer == .cannotComplete {
+                if let window = known[id] { elements[id] = element; windows.append(window) }
+                continue
+            }
+            guard answer == .success, subrole as? String == kAXStandardWindowSubrole as String else { continue }
             elements[id] = element
             observeWindow(pid, element)
             windows.append(WindowInfo(

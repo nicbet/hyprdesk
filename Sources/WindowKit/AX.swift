@@ -26,6 +26,17 @@ enum AX {
         value(element, attribute) as? [AXUIElement] ?? []
     }
 
+    /// The same, but nil when the app didn't answer (busy, or waking from sleep): that's not
+    /// "no elements", and must not be taken as such.
+    static func elementsIfAnswered(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        switch AXUIElementCopyAttributeValue(element, attribute as CFString, &value) {
+        case .success: return value as? [AXUIElement] ?? []
+        case .cannotComplete: return nil
+        default: return []
+        }
+    }
+
     static func windowID(_ element: AXUIElement) -> CGWindowID? {
         var id: CGWindowID = 0
         guard _AXUIElementGetWindow(element, &id) == .success, id != 0 else { return nil }
