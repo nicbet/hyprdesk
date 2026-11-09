@@ -215,14 +215,29 @@ private struct MiniWindow: View {
             .clipShape(pane)
             .overlay(pane.strokeBorder(.white.opacity(0.16), lineWidth: 1))
             .overlay {
-                AppIcon(window: window)
-                    .frame(width: icon, height: icon)
+                VStack(spacing: 4) {
+                    AppIcon(window: window)
+                        .frame(width: icon, height: icon)
+                    // What it is, beyond the app: its title, muted, when the pane has room.
+                    if showsTitle {
+                        Text(window.title)
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .lineLimit(1).truncationMode(.middle)
+                            .padding(.horizontal, 6)
+                            .frame(maxWidth: size.width)
+                    }
+                }
             }
             .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
             .help(window.title.isEmpty ? window.appName : "\(window.appName) — \(window.title)")
     }
 
     private var icon: CGFloat { min(34, min(size.width, size.height) * 0.5) }
+    /// Room for a line under the icon, and a title that says more than the app's name.
+    private var showsTitle: Bool {
+        size.width >= 64 && size.height >= icon + 30 && !window.title.isEmpty && window.title != window.appName
+    }
 }
 
 struct AppIcon: View {
