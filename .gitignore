@@ -1,0 +1,14 @@
+
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.app
+*.dmg
+
+# macOS
+.DS_Store
+
+# Bundled app
+build/
