@@ -53,17 +53,36 @@ import WindowKit
         #expect(cards.map(\.name) == ["a"])
     }
 
-    @Test func miniaturesPlaceWindowsOnTheirOwnScreen() {
-        let main = CGRect(x: 0, y: 0, width: 1000, height: 500), right = CGRect(x: 1000, y: 0, width: 800, height: 400)
-        let size = CGSize(width: 200, height: 100)
-        // Left half of the main screen.
-        #expect(MiniDesktop.frame(of: CGRect(x: 0, y: 0, width: 500, height: 500), screens: [main, right], in: size)
-                == CGRect(x: 0, y: 0, width: 100, height: 100))
-        // The right half of the other screen lands on the right half of the miniature.
-        #expect(MiniDesktop.frame(of: CGRect(x: 1400, y: 0, width: 400, height: 400), screens: [main, right], in: size)
-                == CGRect(x: 100, y: 0, width: 100, height: 100))
-        // Hanging off the edge: clipped.
-        #expect(MiniDesktop.frame(of: CGRect(x: 900, y: 0, width: 200, height: 100), screens: [main], in: size)?.maxX == 200)
+    @Test func theFrontmostWindowTakesTheLeftHalf() {
+        let size = CGSize(width: 212, height: 112), bounds = CGRect(x: 6, y: 6, width: 200, height: 100)
+        #expect(MiniDesktop.tiles(count: 0, in: size).frames.isEmpty)
+        #expect(MiniDesktop.tiles(count: 1, in: size).frames == [bounds])
+        // Three: the rest stacked on the right.
+        #expect(MiniDesktop.tiles(count: 3, in: size).frames == [
+            CGRect(x: 6, y: 6, width: 97, height: 100),
+            CGRect(x: 109, y: 6, width: 97, height: 47), CGRect(x: 109, y: 59, width: 97, height: 47),
+        ])
+        // Five: two columns on the right, two rows.
+        let five = MiniDesktop.tiles(count: 5, in: size).frames
+        #expect(five.count == 5 && five[1...].allSatisfy { $0.width == 45.5 && $0.height == 47 })
+        // Six: the last of the stack alone in its row, across both columns.
+        #expect(MiniDesktop.tiles(count: 6, in: size).frames.last?.width == 97)
+    }
+
+    @Test func windowsBeyondTheTilesShareTheLastOne() {
+        let size = CGSize(width: 212, height: 112)
+        let seven = MiniDesktop.tiles(count: 7, in: size)
+        #expect(seven.frames.count == 7 && seven.overflow == nil)
+        // Ten: six windows, and "+4" where the seventh would be.
+        let ten = MiniDesktop.tiles(count: 10, in: size)
+        #expect(ten.frames == Array(seven.frames.prefix(6)))
+        #expect(ten.overflow?.frame == seven.frames[6] && ten.overflow?.count == 4)
+        // No tile overlaps another, and all stay on the miniature.
+        let all = seven.frames
+        for (i, tile) in all.enumerated() {
+            #expect(CGRect(origin: .zero, size: size).contains(tile))
+            for other in all[(i + 1)...] { #expect(!tile.intersects(other)) }
+        }
     }
 
     @Test func appsByWindowCountThenName() {

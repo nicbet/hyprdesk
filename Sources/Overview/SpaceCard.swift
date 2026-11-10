@@ -62,18 +62,51 @@ public struct SpaceCard: Identifiable, Equatable {
     }
 }
 
-/// Where a window sits on a card's miniature desktop: each window is placed relative to the
-/// screen holding it (with several screens, they share the one miniature).
+/// Where a card's windows go on its miniature desktop: a main-and-stack layout, as tiling
+/// window managers have it. The frontmost window takes the left half; the others share the
+/// right half, one above another, in two columns once there are more than three of them. Real
+/// sizes and positions don't count: on macOS windows mostly overlap, and drawn where they
+/// really sit, the frontmost hides the rest. Every card fills its miniature the same way.
 public enum MiniDesktop {
-    /// `frame` (Accessibility coordinates) on a miniature `size` of its screen; clipped to the
-    /// miniature, nil when nothing of it is on a screen.
-    public static func frame(of frame: CGRect, screens: [CGRect], in size: CGSize) -> CGRect? {
-        guard let screen = ScreenGeometry.screen(for: frame, in: screens), screen.width > 0, screen.height > 0 else { return nil }
-        let sx = size.width / screen.width, sy = size.height / screen.height
-        let mini = CGRect(x: (frame.minX - screen.minX) * sx, y: (frame.minY - screen.minY) * sy,
-                          width: frame.width * sx, height: frame.height * sy)
-        let clipped = mini.intersection(CGRect(origin: .zero, size: size))
-        return clipped.isNull || clipped.width < 1 || clipped.height < 1 ? nil : clipped
+    public struct Tiles: Equatable, Sendable {
+        /// One per window shown, frontmost first: the first `frames.count` of the card's windows.
+        public var frames: [CGRect]
+        /// The last tile, for the windows that didn't get one, and how many those are.
+        public var overflow: (frame: CGRect, count: Int)?
+
+        public static func == (a: Tiles, b: Tiles) -> Bool {
+            a.frames == b.frames && a.overflow?.frame == b.overflow?.frame && a.overflow?.count == b.overflow?.count
+        }
+    }
+
+    /// Tiles for `count` windows over a miniature `size`; at most `maxTiles`, the last of them
+    /// "+N" when there are more windows than that.
+    public static func tiles(count: Int, in size: CGSize, inset: CGFloat = 6, spacing: CGFloat = 6, maxTiles: Int = 7) -> Tiles {
+        let bounds = CGRect(origin: .zero, size: size).insetBy(dx: inset, dy: inset)
+        guard count > 0, bounds.width > 0, bounds.height > 0 else { return Tiles(frames: []) }
+        if count == 1 { return Tiles(frames: [bounds]) }
+
+        let tiles = min(count, max(2, maxTiles))
+        let half = (bounds.width - spacing) / 2
+        let main = CGRect(x: bounds.minX, y: bounds.minY, width: half, height: bounds.height)
+        let stack = CGRect(x: main.maxX + spacing, y: bounds.minY, width: half, height: bounds.height)
+
+        // The stack: one column up to three, else two; a last tile alone in its row spans both.
+        let others = tiles - 1
+        let columns = others <= 3 ? 1 : 2
+        let rows = (others + columns - 1) / columns
+        let height = (stack.height - CGFloat(rows - 1) * spacing) / CGFloat(rows)
+        let width = (stack.width - CGFloat(columns - 1) * spacing) / CGFloat(columns)
+        var frames = [main]
+        for index in 0..<others {
+            let row = index / columns, column = index % columns
+            let alone = column == 0 && index == others - 1
+            frames.append(CGRect(x: stack.minX + CGFloat(column) * (width + spacing), y: stack.minY + CGFloat(row) * (height + spacing),
+                                 width: alone ? stack.width : width, height: height))
+        }
+        guard count > tiles else { return Tiles(frames: frames) }
+        let last = frames.removeLast()
+        return Tiles(frames: frames, overflow: (last, count - frames.count))
     }
 }
 
