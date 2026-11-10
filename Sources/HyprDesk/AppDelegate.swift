@@ -393,9 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Opening a card switches to its workspace (or brings up the scratchpad); a window in a
     /// card's miniature is focused, switching along.
     private func makeOverviewModel() -> OverviewModel {
-        let model = OverviewModel(spaces: spaces, inventory: inventory) { [weak self] in
-            self?.engine.homeFrames() ?? [:]
-        }
+        let model = OverviewModel(spaces: spaces, inventory: inventory)
         model.onActivate = { [weak self] card in
             guard let self else { return }
             overview.dismiss(restoringFocus: false)

@@ -68,6 +68,14 @@ public enum OverviewSnapshot {
             SpaceCard(space: Space(name: "api"), windows: [
                 window(10, "com.docker.docker", "Docker", "Containers", 900, 560, 590, 400),
                 window(9, code.0, code.1, "routes.go — api", 40, 44, 1000, 820),
+                // A busy one: more windows than tiles.
+                window(20, "com.apple.Terminal", "Terminal", "go test ./...", 300, 300, 700, 420),
+                window(21, "com.apple.Console", "Console", "api.log", 500, 200, 800, 600),
+                window(22, "com.apple.ActivityMonitor", "Activity Monitor", "All Processes", 600, 100, 700, 500),
+                window(23, "com.apple.Preview", "Preview", "schema.pdf", 200, 150, 600, 700),
+                window(24, "com.apple.TextEdit", "TextEdit", "notes.txt", 100, 400, 500, 400),
+                window(25, "com.apple.calculator", "Calculator", "Calculator", 1200, 600, 230, 400),
+                window(26, "com.apple.finder", "Finder", "api", 800, 500, 600, 400),
             ], isActive: false),
             SpaceCard(space: Space(name: "design"), windows: [
                 window(5, firefox.0, firefox.1, "Inspiration — Firefox", 880, 300, 610, 660),

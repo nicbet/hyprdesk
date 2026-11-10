@@ -10,10 +10,6 @@ import WindowKit
 public final class OverviewModel {
     private let live: (spaces: SpaceStore, inventory: WindowInventory)?
     private let sample: (cards: [SpaceCard], now: Date)
-    /// Where every window belongs on screen (parked ones included), asked when the overview opens.
-    @ObservationIgnored private let readFrames: () -> [CGWindowID: CGRect]
-    /// The miniatures' frames, read in `reset()`: windows don't move while it's up.
-    private var frames: [CGWindowID: CGRect] = [:]
     /// The screens (Accessibility coordinates) the miniatures stand for; the first sets their shape.
     public private(set) var screens: [CGRect]
 
@@ -25,25 +21,18 @@ public final class OverviewModel {
     @ObservationIgnored public var onRaise: (WindowInfo) -> Void = { _ in }
     @ObservationIgnored public var onDismiss: () -> Void = {}
 
-    /// `frames`: where every window really is, asked of the apps (the engine also knows where
-    /// parked ones belong).
-    public init(spaces: SpaceStore, inventory: WindowInventory, frames: @escaping () -> [CGWindowID: CGRect]) {
+    public init(spaces: SpaceStore, inventory: WindowInventory) {
         live = (spaces, inventory)
         sample = ([], .now)
-        readFrames = frames
         screens = []
     }
 
-    /// Fixed cards, for snapshots: windows where their `frame` says, on `screens`.
+    /// Fixed cards, for snapshots, on `screens`.
     public init(cards: [SpaceCard], now: Date, screens: [CGRect] = [CGRect(x: 0, y: 0, width: 1512, height: 982)]) {
         live = nil
         sample = (cards, now)
-        readFrames = { Dictionary(cards.flatMap(\.windows).map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first }) }
         self.screens = screens
-        frames = readFrames()
     }
-
-    public func frame(of window: WindowInfo) -> CGRect { frames[window.id] ?? window.frame }
 
     /// Width over height of the miniatures: the main screen's.
     public var aspect: CGFloat {
@@ -68,10 +57,7 @@ public final class OverviewModel {
 
     public func reset() {
         order = WindowOrder.current()
-        if live != nil {
-            screens = ScreenGeometry.screens()
-            frames = readFrames()
-        }
+        if live != nil { screens = ScreenGeometry.screens() }
         selection = cards.firstIndex(where: \.isActive) ?? 0
     }
 

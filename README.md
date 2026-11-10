@@ -24,7 +24,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/overview.jpg" alt="The overview (⌃↑): every workspace as a miniature of its screen, the current one highlighted">
+  <img src="docs/overview.jpg" alt="The overview (⌃↑): every workspace as a card with its windows tiled, the frontmost largest, the current one highlighted">
 </p>
 
 ## Why
@@ -70,7 +70,7 @@ make install-cli    # optional: the `hyprdesk` command, in ~/.local/bin
 | ✦ S | Show or hide the scratchpad |
 | ✦ ⇧ S | Move the focused window into the scratchpad, or back out |
 | ⌃← ⌃→ | Previous / next workspace, in place of macOS's desktops |
-| ⌃↑ | The overview: every workspace as a miniature of its screen |
+| ⌃↑ | The overview: every workspace as a card, its windows tiled, the frontmost largest |
 | ⌃↓ | The workspace's Mission Control: pictures of its windows |
 | ⌘Tab | The workspace's windows, most recent first |
 
@@ -162,7 +162,7 @@ Builds are signed with the "Local App Signing" certificate from `make signing-ce
 | `WindowKit` | Every standard window via Accessibility: listing, observing, moving, focusing; screen geometry. No workspaces. |
 | `Spaces` | Workspaces and which one each window belongs to (sticky apps, the scratchpad), saved to disk. No AppKit. |
 | `Workspaces` | The engine: parks and restores windows, switches, follows focus, recovers after a crash. |
-| `Overview` | ⌃↑: the cards and their miniatures, keyboard navigation, snapshots. |
+| `Overview` | ⌃↑: the cards and their tiled windows, keyboard navigation, snapshots. |
 | `Expose` | ⌃↓: the workspace's Mission Control, its layout and thumbnails. |
 | `Switcher` | ⌘Tab: the switcher's model and HUD. |
 | `Search` | ✦ Space: ranking windows by title, app and workspace. |

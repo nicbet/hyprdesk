@@ -98,9 +98,9 @@ public struct OverviewView: View {
     }
 }
 
-/// A workspace (or the scratchpad) as a miniature of its screen: its windows where they really
-/// sit, back to front, each with its app's icon; below, one row with its number and name. Every
-/// card is the same height.
+/// A workspace (or the scratchpad) as a miniature of its screen: its windows tiled over it,
+/// the frontmost the largest (`MiniDesktop.tiles`), each with its app's icon; below, one row
+/// with its number and name. Every card is the same height.
 private struct CardView: View {
     let card: SpaceCard
     let number: Int?
@@ -137,13 +137,18 @@ private struct CardView: View {
             .frame(maxWidth: .infinity)
             .overlay { GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
-                ForEach(card.windows.filter { !$0.isMinimized }.reversed()) { window in
-                    if let mini = MiniDesktop.frame(of: model.frame(of: window), screens: model.screens, in: geometry.size) {
-                        MiniWindow(window: window, size: mini.size)
-                            .frame(width: mini.width, height: mini.height)
-                            .offset(x: mini.minX, y: mini.minY)
-                            .onTapGesture { model.onRaise(window) }
-                    }
+                let windows = card.windows.filter { !$0.isMinimized }
+                let tiles = MiniDesktop.tiles(count: windows.count, in: geometry.size)
+                ForEach(Array(zip(windows, tiles.frames)), id: \.0.id) { window, tile in
+                    MiniWindow(window: window, size: tile.size)
+                        .frame(width: tile.width, height: tile.height)
+                        .offset(x: tile.minX, y: tile.minY)
+                        .onTapGesture { model.onRaise(window) }
+                }
+                if let overflow = tiles.overflow {
+                    MoreWindows(windows: Array(windows.suffix(overflow.count)))
+                        .frame(width: overflow.frame.width, height: overflow.frame.height)
+                        .offset(x: overflow.frame.minX, y: overflow.frame.minY)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -237,6 +242,32 @@ private struct MiniWindow: View {
     /// Room for a line under the icon, and a title that says more than the app's name.
     private var showsTitle: Bool {
         size.width >= 64 && size.height >= icon + 30 && !window.title.isEmpty && window.title != window.appName
+    }
+}
+
+/// The last tile when a card has more windows than tiles: "+N" over their apps' icons.
+private struct MoreWindows: View {
+    let windows: [WindowInfo]
+
+    var body: some View {
+        let pane = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        pane.fill(Color(white: 0.15))
+            .overlay(pane.strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            .overlay {
+                VStack(spacing: 3) {
+                    HStack(spacing: -4) {
+                        ForEach(apps.prefix(3)) { AppIcon(window: $0).frame(width: 16, height: 16) }
+                    }
+                    Text("+\(windows.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
+                }
+            }
+            .help(windows.map { $0.title.isEmpty ? $0.appName : "\($0.appName) — \($0.title)" }.joined(separator: "\n"))
+    }
+
+    /// One window per app, in order.
+    private var apps: [WindowInfo] {
+        var seen = Set<String>()
+        return windows.filter { seen.insert($0.appKey).inserted }
     }
 }
 

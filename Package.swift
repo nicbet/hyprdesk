@@ -29,7 +29,7 @@ let package = Package(
         .target(name: "Control"),
         // The space's Mission Control: pictures of its windows.
         .target(name: "Expose", dependencies: ["WindowKit"]),
-        // The overview: every space as a miniature of its screen, with its windows.
+        // The overview: every space as a miniature of its screen, its windows spread out on it.
         .target(name: "Overview", dependencies: ["Spaces", "WindowKit"]),
 
         .testTarget(name: "SpacesTests", dependencies: ["Spaces", "WindowKit"]),

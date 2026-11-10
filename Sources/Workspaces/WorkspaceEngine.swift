@@ -488,18 +488,6 @@ public final class WorkspaceEngine {
     /// Whether the window is parked right now.
     public func isParked(_ window: WindowInfo) -> Bool { parked[window.id] != nil }
 
-    /// Where every window really belongs (Accessibility coordinates), asked of the apps right now:
-    /// its spot on screen, or, while it's parked out of sight, the spot it came from. Listings
-    /// carry frames too, but only as fresh as the last relist (moves and resizes send nothing).
-    public func homeFrames() -> [CGWindowID: CGRect] {
-        let windows = inventory.windows
-        let live = inventory.frames(of: windows.filter { parked[$0.id] == nil && !$0.isMinimized })
-        var frames = Dictionary(windows.map { ($0.id, $0.frame) }, uniquingKeysWith: { first, _ in first })
-        frames.merge(live) { _, now in now }
-        frames.merge(parked) { _, home in home }
-        return frames
-    }
-
     // MARK: Events
 
     private func windowsChanged(_ windows: [WindowInfo]) {
