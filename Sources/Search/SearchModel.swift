@@ -6,7 +6,9 @@ import Observation
 @MainActor
 @Observable
 public final class SearchModel {
-    public var query = "" { didSet { refresh() } }
+    /// The field writes its text back on Return; only a real change re-ranks (and resets the
+    /// selection), or Return would always pick the top result.
+    public var query = "" { didSet { if query != oldValue { refresh() } } }
     public private(set) var results: [SearchCandidate] = []
     public private(set) var selection = 0
     /// Goes up every time the search opens: the view puts the cursor back in the field.

@@ -49,4 +49,16 @@ import WindowKit
         model.pick()
         #expect(picked == 2)
     }
+
+    @Test func writingTheSameQueryBackKeepsTheSelection() {
+        let model = SearchModel()
+        var picked: CGWindowID?
+        model.onPick = { picked = $0.id }
+        model.begin([candidate(1, "Ghostty", "zsh"), candidate(2, "Safari", "Docs"), candidate(3, "Slack", "general")])
+        model.query = "s"
+        model.move(1)
+        model.query = "s"  // what the text field does on Return
+        model.pick()
+        #expect(picked == model.results[1].id)
+    }
 }
