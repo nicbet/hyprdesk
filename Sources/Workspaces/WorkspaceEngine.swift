@@ -16,6 +16,10 @@ import WindowKit
 /// It works on one macOS desktop, the one its windows are on. Accessibility lists only the
 /// current desktop's windows, so on another desktop HyprDesk is *away*: it ignores what it
 /// sees there (nothing forgotten, parked, placed or switched) until you come back.
+///
+/// Display changes are handled the same way: while the displays sleep, or come and go (a lone
+/// external display drops off the bus in standby), the listing and the screen geometry can't be
+/// trusted, so HyprDesk is hands off until they've settled and it's home again.
 @MainActor
 @Observable
 public final class WorkspaceEngine {
@@ -58,6 +62,17 @@ public final class WorkspaceEngine {
     /// A desktop change happened and isn't settled: listings may be another desktop's.
     @ObservationIgnored private var desktopUnsettled = false
     @ObservationIgnored private var desktopCheck: Task<Void, Never>?
+    /// The displays (or the whole Mac) are asleep: nothing to check until they wake.
+    @ObservationIgnored private var screensAsleep = false
+    @ObservationIgnored private var systemAsleep = false
+    /// A display change happened and isn't settled: the screens may be missing or a stand-in.
+    @ObservationIgnored private var displaysUnsettled = false
+    /// The shown windows' frames, and the screens, from just before the displays changed: macOS
+    /// moves windows off a display that goes away and doesn't always put them back.
+    @ObservationIgnored private var beforeDisplayChange: (screens: [CGRect], frames: [CGWindowID: CGRect])?
+    /// Since when the screens back from a display change aren't the ones from before it.
+    @ObservationIgnored private var otherScreensSince: ContinuousClock.Instant?
+    @ObservationIgnored private var displayTokens: [(NotificationCenter, NSObjectProtocol)] = []
     @ObservationIgnored private var lastFocused: [UUID: CGWindowID] = [:]
     /// The scratchpad's last focused window.
     @ObservationIgnored private var lastScratchpad: CGWindowID?
@@ -81,6 +96,12 @@ public final class WorkspaceEngine {
     static let quietAfterSwitch: Duration = .milliseconds(400)
     /// After a desktop change, the slide animation settles before the check.
     static let desktopSettle: Duration = .milliseconds(400)
+    /// After the last display change (waking, a display coming back), before the check: the
+    /// screens arrive one notification at a time, and apps answer slowly just after waking.
+    static let displaySettle: Duration = .seconds(2)
+    /// How long to wait for the screens from before a display change to come back: a display
+    /// returning through a hub or KVM shows up in stages (a stand-in mode first, then its own).
+    static let sameScreensWait: Duration = .seconds(10)
     /// `log stream --predicate 'subsystem == "com.github.nicbet.hyprdesk"'`
     private static let log = Logger(subsystem: "com.github.nicbet.hyprdesk", category: "engine")
 
@@ -108,6 +129,7 @@ public final class WorkspaceEngine {
         inventory.onChange = { [weak self] in self?.windowsChanged($0) }
         inventory.onFocusChange = { [weak self] in self?.focusChanged($0) }
         inventory.onDesktopChange = { [weak self] in self?.desktopDidChange() }
+        observeDisplays()
         if !inventory.windows.isEmpty { windowsChanged(inventory.windows) }
     }
 
@@ -118,6 +140,8 @@ public final class WorkspaceEngine {
         inventory.onChange = nil
         inventory.onFocusChange = nil
         inventory.onDesktopChange = nil
+        for (center, token) in displayTokens { center.removeObserver(token) }
+        displayTokens = []
         desktopCheck?.cancel()
         unparkAll()
     }
@@ -398,6 +422,8 @@ public final class WorkspaceEngine {
         // On another desktop the listing isn't ours: parking from it would hide the wrong windows.
         guard !isPaused, !desktopUnsettled else { return 0 }
         let screens = ScreenGeometry.screens()
+        // No screen to measure against: every window would look on screen, parked ones too.
+        guard !screens.isEmpty else { return 0 }
         let windows = inventory.windows
 
         // 1. Back on screen.
@@ -529,19 +555,121 @@ public final class WorkspaceEngine {
     /// too); once the slide has settled, check: if HyprDesk's windows are on screen again,
     /// it's home, and the windows are listed afresh.
     private func desktopDidChange() {
+        handOff(checkAfter: Self.desktopSettle)
+    }
+
+    /// Hands off now; after `delay` (longer while the displays are unsettled), if the displays
+    /// are awake and HyprDesk's windows are on screen again, it's home: the windows are listed
+    /// afresh and, after a display change, put back where they were. Not home: it stays away
+    /// until the next desktop or display change.
+    private func handOff(checkAfter delay: Duration) {
         desktopUnsettled = true
         isAway = true
         desktopCheck?.cancel()
         desktopCheck = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.desktopSettle)
-            guard let self, !Task.isCancelled else { return }
+            guard let self else { return }
+            try? await Task.sleep(for: displaysUnsettled ? max(delay, Self.displaySettle) : delay)
+            guard !Task.isCancelled else { return }
+            // Waking (the displays, or the Mac) checks again.
+            guard !screensAsleep, !systemAsleep, !NSScreen.screens.isEmpty else { return }
+            // Other screens than before: likely still arriving. Wait (a while) for the real ones.
+            if displaysUnsettled, let before = beforeDisplayChange,
+               !Self.sameScreens(before.screens, ScreenGeometry.screens()) {
+                let since = otherScreensSince ?? .now
+                otherScreensSince = since
+                if since.duration(to: .now) < Self.sameScreensWait {
+                    Self.log.info("screens \(Self.describe(ScreenGeometry.screens()), privacy: .public), before \(Self.describe(before.screens), privacy: .public): waiting")
+                    handOff(checkAfter: Self.displaySettle)
+                    return
+                }
+            }
             let home = Desktop.isHome(homeWindows, onScreen: Desktop.onScreenWindowIDs())
-            Self.log.info("desktop changed: \(home ? "home" : "away", privacy: .public)")
+            Self.log.info("\(self.displaysUnsettled ? "displays" : "desktop", privacy: .public) changed: \(home ? "home" : "away", privacy: .public)")
             guard home else { return }
             desktopUnsettled = false
             isAway = false
+            let displaysChanged = displaysUnsettled
+            displaysUnsettled = false
+            otherScreensSince = nil
             inventory.refreshAll()
+            guard displaysChanged else { return }
+            // The listing may be just what it was before (relisting reports only changes).
+            windowsChanged(inventory.windows)
+            restoreFramesFromBeforeDisplayChange()
         }
+    }
+
+    // MARK: Displays
+
+    private func observeDisplays() {
+        guard displayTokens.isEmpty else { return }
+        let workspace = NSWorkspace.shared.notificationCenter
+        let observe = { (center: NotificationCenter, name: Notification.Name, handle: @escaping @MainActor (WorkspaceEngine) -> Void) in
+            let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { if let self { handle(self) } }
+            }
+            self.displayTokens.append((center, token))
+        }
+        observe(workspace, NSWorkspace.screensDidSleepNotification) { $0.screensAsleep = true; $0.displaysDidChange("screens asleep") }
+        observe(workspace, NSWorkspace.screensDidWakeNotification) { $0.screensAsleep = false; $0.displaysDidChange("screens awake") }
+        observe(workspace, NSWorkspace.willSleepNotification) { $0.systemAsleep = true; $0.displaysDidChange("going to sleep") }
+        observe(workspace, NSWorkspace.didWakeNotification) { $0.systemAsleep = false; $0.displaysDidChange("woke") }
+        observe(.default, NSApplication.didChangeScreenParametersNotification) { $0.displaysDidChange("screens changed") }
+        // After waking to the lock screen, the windows may not count as on screen until unlocked.
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { $0.displaysDidChange("unlocked") }
+    }
+
+    /// The displays slept, woke or changed. Whatever is listed until they settle may be wrong
+    /// (windows missing, every one of them on a stand-in screen): taken at its word, windows
+    /// would lose their workspace, or be parked and put back against the wrong screens.
+    private func displaysDidChange(_ what: String) {
+        Self.log.info("\(what, privacy: .public): \(Self.describe(ScreenGeometry.screens()), privacy: .public)")
+        // Where the shown windows were, from the last listing while settled.
+        if !desktopUnsettled, beforeDisplayChange == nil {
+            let shown = inventory.windows.filter(isPlainlyShown)
+            beforeDisplayChange = (ScreenGeometry.screens(),
+                                   Dictionary(shown.compactMap { w in lastOnScreen[w.id].map { (w.id, $0) } }, uniquingKeysWith: { a, _ in a }))
+        }
+        displaysUnsettled = true
+        handOff(checkAfter: Self.displaySettle)
+    }
+
+    /// Back from a display change on the same screens: every shown window macOS moved goes
+    /// back where it was. Parked windows need nothing: `apply()` parks them again from their
+    /// parked frames, wherever macOS put them.
+    private func restoreFramesFromBeforeDisplayChange() {
+        guard let before = beforeDisplayChange else { return }
+        beforeDisplayChange = nil
+        let screens = ScreenGeometry.screens()
+        guard Self.sameScreens(before.screens, screens) else {
+            Self.log.info("other screens than before the display change (\(Self.describe(screens), privacy: .public), before \(Self.describe(before.screens), privacy: .public)): windows stay where macOS put them")
+            return
+        }
+        let shown = inventory.windows.filter { isPlainlyShown($0) && before.frames[$0.id] != nil }
+        let now = inventory.frames(of: shown)
+        let moves = shown.compactMap { window -> (window: WindowInfo, frame: CGRect)? in
+            guard let old = before.frames[window.id], let frame = now[window.id], frame != old,
+                  !ScreenGeometry.isMostlyOffscreen(old, in: screens) else { return nil }
+            return (window, old)
+        }
+        let moved = inventory.setFrames(moves)
+        if moved > 0 { Self.log.info("put \(moved) windows back where they were before the display change") }
+    }
+
+    /// On screen in the current workspace as itself: not parked, minimized or in the scratchpad.
+    private func isPlainlyShown(_ window: WindowInfo) -> Bool {
+        spaces.isShown(window) && !window.isMinimized && parked[window.id] == nil
+            && spaces.placement(of: window)?.placement != .scratchpad
+    }
+
+    /// "3360×1890 at 0,0 + …", or "none".
+    private static func describe(_ screens: [CGRect]) -> String {
+        screens.isEmpty ? "none" : screens.map { "\(Int($0.width))×\(Int($0.height)) at \(Int($0.minX)),\(Int($0.minY))" }.joined(separator: " + ")
+    }
+
+    private static func sameScreens(_ a: [CGRect], _ b: [CGRect]) -> Bool {
+        let order = { (r: CGRect, s: CGRect) in (r.minX, r.minY, r.width, r.height) < (s.minX, s.minY, s.width, s.height) }
+        return a.sorted(by: order) == b.sorted(by: order)
     }
 
     private func focusChanged(_ id: CGWindowID) {
