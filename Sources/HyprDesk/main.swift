@@ -8,7 +8,7 @@ import WindowKit
 
 enum HyprDesk {
     static let name = "HyprDesk"
-    static let version = "0.1.0"
+    static let version = "0.3.2"
 }
 
 // `hyprdesk <command>`: the command line, asking the running app (see `Commands`). Prints JSON;
