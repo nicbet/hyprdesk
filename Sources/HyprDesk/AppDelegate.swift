@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var hotKeys: [HotKey] = []
     private let accessItem = NSMenuItem(title: "Allow Accessibility…", action: #selector(requestAccess), keyEquivalent: "")
     private let suspendItem = NSMenuItem(title: "Suspend HyprDesk", action: #selector(toggleSuspended), keyEquivalent: "")
+    private let cliItem = NSMenuItem(title: "Install Command Line Tool…", action: #selector(toggleCLI), keyEquivalent: "")
     /// The ⌃-arrow presses we took, so their key-ups are swallowed too.
     private var tookArrows: Set<Int64> = []
 
@@ -332,7 +333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Menu
 
-    /// The version, Manage Workspaces, Suspend and Quit. Everything else has a shortcut, and
+    /// The version, Manage Workspaces, the command line tool, Suspend and Quit. Everything else has a shortcut, and
     /// the shortcuts are listed in the Manage window.
     private func makeStatusItem() -> NSStatusItem {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -348,6 +349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(accessItem)
         // No ⌘, : HyprDesk is never the frontmost app, so the menu's key equivalent never fires.
         menu.addItem(menuItem("Manage Workspaces…", action: #selector(showManageWindow)))
+        cliItem.target = self
+        menu.addItem(cliItem)
         menu.addItem(.separator())
         suspendItem.target = self
         suspendItem.toolTip = "Every window back on screen, and macOS's own ⌘Tab, Mission Control and desktops, until you resume."
@@ -379,6 +382,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         accessItem.isHidden = inventory.isTrusted
         suspendItem.title = preferences.isSuspended ? "Resume HyprDesk" : "Suspend HyprDesk"
+        let cli = CLIInstaller.state
+        cliItem.title = cli == .installed ? "Remove Command Line Tool…" : "Install Command Line Tool…"
+        cliItem.toolTip = switch cli {
+        case .installed: "“hyprdesk” in \(CLIInstaller.link.deletingLastPathComponent().path) runs this copy of HyprDesk."
+        case .otherCopy: "“hyprdesk” in \(CLIInstaller.link.deletingLastPathComponent().path) runs another copy of HyprDesk; install to use this one."
+        case .foreign, .missing: "The “hyprdesk” command, in \(CLIInstaller.link.deletingLastPathComponent().path): control HyprDesk from scripts and agents."
+        }
+    }
+
+    /// Installs `hyprdesk` in /usr/local/bin, or removes it, and says how that went.
+    @objc private func toggleCLI() {
+        let installing = CLIInstaller.state != .installed
+        let result = installing ? CLIInstaller.install() : CLIInstaller.remove()
+        let alert = NSAlert()
+        switch result {
+        case .success where installing:
+            alert.messageText = "hyprdesk is installed"
+            alert.informativeText = "Try “hyprdesk list” in a new terminal window. The command runs this copy of HyprDesk; if you move the app, install it again."
+        case .success:
+            alert.messageText = "hyprdesk is removed"
+            alert.informativeText = "\(CLIInstaller.link.path) is gone. HyprDesk itself is untouched."
+        case .failure(.cancelled):
+            return
+        case .failure(.message(let message)):
+            alert.alertStyle = .warning
+            alert.messageText = installing ? "Couldn't install hyprdesk" : "Couldn't remove hyprdesk"
+            alert.informativeText = message
+        }
+        NSApp.activate()
+        alert.runModal()
     }
 
     /// Suspended: every window on screen, no hiding, none of our shortcuts or key overrides,
