@@ -47,7 +47,6 @@ public struct ExposeView: View {
                             if case .active = phase, model.pointer.allows(at: NSEvent.mouseLocation) { model.selection = index }
                         }
                         .onTapGesture { model.pick(index) }
-                        .zIndex(model.selection == index ? 1 : 0)
                         .scaleEffect(x: expanded ? 1 : start.width / max(1, target.width),
                                      y: expanded ? 1 : start.height / max(1, target.height))
                         .offset(x: expanded ? 0 : start.midX - target.midX, y: expanded ? 0 : start.midY - target.midY)
@@ -103,22 +102,22 @@ private struct Thumbnail: View {
                 shape.fill(.black).shadow(color: .black.opacity(0.45), radius: 12, y: 6)
                     .opacity(isSettled ? 1 : 0)
             }
-            .overlay(alignment: .bottom) {
-                Image(nsImage: Self.icon(for: window)).resizable().frame(width: 40, height: 40)
-                    .offset(y: 18)
+            .overlay {
+                // The app and title sit in the middle of the picture, so they never reach into a
+                // neighbour, however the grid packs the windows. Without a picture the
+                // placeholder already shows both.
+                if image != nil {
+                    VStack(spacing: 8) {
+                        Image(nsImage: Self.icon(for: window)).resizable().frame(width: 48, height: 48)
+                            .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
+                        Text(window.title.isEmpty ? window.appName : window.title)
+                            .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Color(white: isSelected ? 0.22 : 0.12).opacity(0.92), in: Capsule())
+                    }
+                    .frame(maxWidth: max(1, size.width - 16))
                     .opacity(isSettled ? 1 : 0)
-            }
-            .overlay(alignment: .bottom) {
-                // Every window is labelled; the selected one stands out and may run wider than its
-                // thumbnail (it's drawn above its neighbours), the rest stay within their own.
-                if isSettled {
-                    Text(window.title.isEmpty ? window.appName : window.title)
-                        .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
-                        .foregroundStyle(isSelected ? .primary : .secondary)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Color(white: isSelected ? 0.22 : 0.12).opacity(0.92), in: Capsule())
-                        .frame(width: isSelected ? max(160, size.width + 80) : max(60, size.width))
-                        .offset(y: 54)
                 }
             }
             .scaleEffect(isSelected && isSettled ? 1.03 : 1)

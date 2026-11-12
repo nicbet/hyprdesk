@@ -17,7 +17,7 @@ public enum ExposeLayout {
     /// tie-breakers, one per frame. `centering`: the index of the window for the middle cell.
     /// `bounds`: the area to fill. `labelHeight`: room kept under each thumbnail.
     public static func layout(_ frames: [CGRect], ids: [UInt32]? = nil, centering center: Int? = nil, in bounds: CGRect,
-                              spacing: CGFloat = 28, labelHeight: CGFloat = 26) -> Result {
+                              spacing: CGFloat = 28, labelHeight: CGFloat = 0) -> Result {
         let count = frames.count
         guard count > 0, bounds.width > 0, bounds.height > 0 else { return Result(frames: [], rows: 0, columns: 0) }
 
