@@ -8,10 +8,12 @@ enum CLIInstaller {
     static let link = URL(fileURLWithPath: "/usr/local/bin/hyprdesk")
 
     enum State: Equatable {
-        /// Links to this copy of HyprDesk.
-        case installed
-        /// Links to another HyprDesk (moved, or another build).
-        case otherCopy
+        /// Links to a copy of HyprDesk that's there: this one or another (a build, an older
+        /// install). Either works, since the command only talks to whichever HyprDesk is
+        /// running.
+        case installed(copy: URL)
+        /// Links to a copy of HyprDesk that's gone (moved or deleted): the command is broken.
+        case broken
         /// Something at that path that isn't ours.
         case foreign
         case missing
@@ -24,19 +26,24 @@ enum CLIInstaller {
             return FileManager.default.fileExists(atPath: link.path) ? .foreign : .missing
         }
         let resolved = URL(fileURLWithPath: destination, relativeTo: link.deletingLastPathComponent()).resolvingSymlinksInPath()
-        if resolved.path == target?.path { return .installed }
-        return resolved.lastPathComponent == "hyprdesk" && resolved.path.contains(".app/Contents/MacOS/") ? .otherCopy : .foreign
+        guard resolved.lastPathComponent == "hyprdesk", resolved.path.contains(".app/Contents/MacOS/") else { return .foreign }
+        return FileManager.default.isExecutableFile(atPath: resolved.path) ? .installed(copy: resolved) : .broken
     }
 
-    /// Links `hyprdesk` to this copy, replacing a link to another copy. Never replaces a file
-    /// that isn't a HyprDesk link.
+    /// The installed command runs this copy of HyprDesk.
+    static var isThisCopy: Bool {
+        if case .installed(let copy) = state { copy.path == target?.path } else { false }
+    }
+
+    /// Links `hyprdesk` to this copy, replacing a broken link. Never replaces a file that isn't
+    /// a HyprDesk link.
     static func install() -> Result<Void, Failure> {
         guard let target else { return .failure(.message("Couldn't find HyprDesk's own binary.")) }
         if state == .foreign { return .failure(.message("\(link.path) already exists and isn't HyprDesk's. Remove it first.")) }
         let fm = FileManager.default
         do {
             try fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if state == .otherCopy { try fm.removeItem(at: link) }
+            if state == .broken { try fm.removeItem(at: link) }
             try fm.createSymbolicLink(at: link, withDestinationURL: target)
             return .success(())
         } catch {
@@ -46,7 +53,10 @@ enum CLIInstaller {
 
     /// Removes the link, only if it's a HyprDesk link.
     static func remove() -> Result<Void, Failure> {
-        guard state == .installed || state == .otherCopy else { return .success(()) }
+        switch state {
+        case .installed, .broken: break
+        case .foreign, .missing: return .success(())
+        }
         do {
             try FileManager.default.removeItem(at: link)
             return .success(())

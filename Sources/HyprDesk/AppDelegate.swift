@@ -382,18 +382,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuWillOpen(_ menu: NSMenu) {
         accessItem.isHidden = inventory.isTrusted
         suspendItem.title = preferences.isSuspended ? "Resume HyprDesk" : "Suspend HyprDesk"
-        let cli = CLIInstaller.state
-        cliItem.title = cli == .installed ? "Remove Command Line Tool…" : "Install Command Line Tool…"
-        cliItem.toolTip = switch cli {
-        case .installed: "“hyprdesk” in \(CLIInstaller.link.deletingLastPathComponent().path) runs this copy of HyprDesk."
-        case .otherCopy: "“hyprdesk” in \(CLIInstaller.link.deletingLastPathComponent().path) runs another copy of HyprDesk; install to use this one."
-        case .foreign, .missing: "The “hyprdesk” command, in \(CLIInstaller.link.deletingLastPathComponent().path): control HyprDesk from scripts and agents."
+        let folder = CLIInstaller.link.deletingLastPathComponent().path
+        switch CLIInstaller.state {
+        case .installed(let copy):
+            cliItem.title = "Remove Command Line Tool…"
+            cliItem.toolTip = CLIInstaller.isThisCopy
+                ? "“hyprdesk” in \(folder) runs this copy of HyprDesk."
+                : "“hyprdesk” in \(folder) runs the copy at \(copy.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().path); it works with this one too."
+        case .broken:
+            cliItem.title = "Install Command Line Tool…"
+            cliItem.toolTip = "“hyprdesk” in \(folder) runs a copy of HyprDesk that's gone; install to use this one."
+        case .foreign, .missing:
+            cliItem.title = "Install Command Line Tool…"
+            cliItem.toolTip = "The “hyprdesk” command, in \(folder): control HyprDesk from scripts and agents."
         }
     }
 
     /// Installs `hyprdesk` in /usr/local/bin, or removes it, and says how that went.
     @objc private func toggleCLI() {
-        let installing = CLIInstaller.state != .installed
+        let installing = if case .installed = CLIInstaller.state { false } else { true }
         let result = installing ? CLIInstaller.install() : CLIInstaller.remove()
         let alert = NSAlert()
         switch result {
