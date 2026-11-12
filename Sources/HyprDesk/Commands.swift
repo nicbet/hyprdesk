@@ -42,6 +42,11 @@ final class Commands {
             return list()
         case .current:
             return current()
+        case .subscribe:
+            // The socket keeps the connection for events; this is its first line.
+            guard case .object(var object) = current() else { return current() }
+            object["event"] = "subscribed"
+            return .object(object)
         default:
             break
         }
@@ -86,7 +91,7 @@ final class Commands {
             space.name = name
             spaces.update(space)
             return ["ok": true, "workspace": workspace(index)]
-        case .help, .list, .current:
+        case .help, .list, .current, .subscribe:
             return .failure("unreachable")
         }
     }

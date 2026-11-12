@@ -48,6 +48,9 @@ public enum Command: Equatable, Sendable {
     case find(query: String?)
     case create(name: String)
     case rename(WorkspaceRef, to: String)
+    /// Keep the connection open and print an event per line as things happen. `events`: only
+    /// these (see `EventState.matches`); empty for all.
+    case subscribe(events: [String])
     case help
 
     public struct ParseError: Error, Equatable, CustomStringConvertible {
@@ -105,6 +108,7 @@ public enum Command: Equatable, Sendable {
         case "rename":
             guard operands.count >= 2 else { throw ParseError("usage: hyprdesk rename <workspace> <new name>") }
             return .rename(WorkspaceRef(operands[0]), to: operands.dropFirst().joined(separator: " "))
+        case "subscribe", "events": return .subscribe(events: operands)
         case "help": return .help
         default: throw ParseError("unknown command “\(name)”; run `hyprdesk help`")
         }
@@ -128,7 +132,7 @@ public enum Command: Equatable, Sendable {
     /// Whether `word` starts a command (so the binary acts as the command line, not the app).
     public static func isCommand(_ word: String) -> Bool {
         ["list", "ls", "current", "status", "switch", "go", "previous", "back", "move", "focus", "scratchpad", "scratch",
-         "find", "search", "create", "new", "rename", "help", "--help", "-h"].contains(word.lowercased())
+         "find", "search", "create", "new", "rename", "subscribe", "events", "help", "--help", "-h"].contains(word.lowercased())
     }
 
     public static let usage = """
@@ -145,9 +149,16 @@ public enum Command: Equatable, Sendable {
       hyprdesk find [text]                  open the window search (✦ Space)
       hyprdesk create <name>                a new workspace, at the end
       hyprdesk rename <workspace> <name>
+      hyprdesk subscribe [event...]         stay connected: one JSON line per event, as it
+                                            happens (all of them, or those named; `window`
+                                            means every window event)
 
     <workspace> is a number (1 = first in the sidebar), a name (or the start of one),
     `everywhere` (shown in every workspace) or `scratchpad`.
+
+    Events: workspace (switched), workspaceCreated, workspaceRenamed, workspaceRemoved,
+    workspacesReordered, windowOpened, windowClosed, windowMoved, windowTitle, focus,
+    scratchpad, suspended. The first line answers the subscription with the current state.
 
     The same as links: hyprdesk://switch/2, hyprdesk://move/Work?window=1234,
     hyprdesk://scratchpad/toggle, hyprdesk://find?q=slack

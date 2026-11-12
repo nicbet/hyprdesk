@@ -41,7 +41,7 @@ HyprDesk does the part in between, the way [Hyprland](https://hypr.land) does wo
 - **A scratchpad.** A terminal, notes or a chat, called up over any workspace with one key and put away again.
 - **Find any window.** ✦ Space searches every window in every workspace by title, app or workspace name.
 - **Remembered.** Every window's workspace survives restarts of HyprDesk, of its app, and of your Mac.
-- **Scriptable.** A `hyprdesk` command line and `hyprdesk://` links that answer in JSON, for scripts, launchers and AI agents.
+- **Scriptable.** A `hyprdesk` command line and `hyprdesk://` links that answer in JSON, and a stream of events as they happen, for scripts, status bars, launchers and AI agents.
 - **Hands off macOS.** Nothing is replaced or turned off. Suspend HyprDesk and every window is back, with macOS's own shortcuts.
 
 ## Getting started
@@ -101,9 +101,59 @@ hyprdesk focus 4211                # switching to its workspace
 hyprdesk scratchpad [toggle|show|hide]
 hyprdesk find slack                # open the window search with "slack" typed
 hyprdesk create "Client X"         # and: hyprdesk rename 4 "Client Y"
+hyprdesk subscribe                 # stay connected: one JSON line per event, as it happens
 ```
 
 It exits 1 when HyprDesk refuses (`{"ok": false, "error": "…"}`) and 2 when it isn't running. The same commands work as links from Raycast, Shortcuts or anywhere a URL opens: `hyprdesk://switch/2`, `hyprdesk://move/Work?window=4211`, `hyprdesk://scratchpad/toggle`, `hyprdesk://find?q=slack`.
+
+`hyprdesk subscribe` is for status bars, scripts and agents that want to react rather than poll. Its first line is the current state, then one line per event:
+
+| Event | |
+| --- | --- |
+| `workspace` | switched: the `workspace` now on screen and the `previous` one |
+| `workspaceCreated`, `workspaceRenamed`, `workspaceRemoved`, `workspacesReordered` | the list of workspaces changed |
+| `windowOpened`, `windowClosed` | a window came or went |
+| `windowMoved` | a window went to another workspace (`from` says where it was) |
+| `windowTitle` | a window's title changed: a page loaded, a terminal ran something |
+| `focus` | another window has the focus |
+| `scratchpad` | the scratchpad came up or went away |
+| `suspended` | HyprDesk was suspended or resumed, or you went to another macOS desktop and back |
+
+Name events to get only those: `hyprdesk subscribe workspace focus`. A name also covers the events that start with it, so `window` is every window event. Windows and workspaces are described as in `list`. The stream ends, with exit code 0, when HyprDesk quits.
+
+A few things it's good for (the examples use [jq](https://jqlang.org)):
+
+**Know when an agent in another workspace is waiting for you.** Run a coding agent per workspace, keep working in yours, and get a notification when one of them needs you. Most terminals put what's running in the window title, and agents change it when they finish or ask something; change the pattern to what yours shows.
+
+```sh
+hyprdesk subscribe workspace windowTitle | while read -r event; do
+  case $(jq -r .event <<<"$event") in
+    subscribed|workspace) here=$(jq -r .workspace.number <<<"$event") ;;
+    windowTitle)
+      where=$(jq -r .window.workspace <<<"$event")
+      title=$(jq -r .window.title <<<"$event")
+      if [ "$where" != "$here" ] && [[ $title == *"needs input"* ]]; then
+        osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title (item 2 of argv)' -e 'end run' \
+          "$title" "Workspace $where is waiting"
+      fi ;;
+  esac
+done
+```
+
+**Show the workspace in a status bar.** With [SketchyBar](https://github.com/FelixKratz/SketchyBar), an item called `workspace` that's always right, renames included, and costs nothing between switches:
+
+```sh
+hyprdesk subscribe workspace |
+  jq --unbuffered -r 'select(.event == "subscribed" or .event == "workspace" or (.event == "workspaceRenamed" and .workspace.active)) | .workspace.name' |
+  while read -r name; do sketchybar --set workspace label="$name"; done
+```
+
+**See where your day went.** One workspace per project, and a line per switch:
+
+```sh
+hyprdesk subscribe workspace |
+  jq --unbuffered -r 'select(.event == "workspace") | [(now | todate), .workspace.name] | @tsv' >> ~/workspaces.tsv
+```
 
 ## How it works
 
