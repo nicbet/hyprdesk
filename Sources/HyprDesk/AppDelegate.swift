@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     /// `hyprdesk <command>` reaches the app here.
     private var control: ControlServer?
+    /// What `hyprdesk subscribe` hears about.
+    private lazy var events = EventFeed(engine: engine, isHandsOff: { [weak self] in self?.handsOff ?? true })
     private static let log = Logger(subsystem: "com.github.nicbet.hyprdesk", category: "control")
     private var hotKeys: [HotKey] = []
     private let accessItem = NSMenuItem(title: "Allow Accessibility…", action: #selector(requestAccess), keyEquivalent: "")
@@ -78,7 +80,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
         engine.onFocus = { [weak self] in
-            guard let self, backdrop.isShown else { return }
+            guard let self else { return }
+            events.update()
+            guard backdrop.isShown else { return }
             layerBackdrop()
         }
         engine.start()
@@ -227,6 +231,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try server.start()
             control = server
+            events.send = { [weak server] in server?.broadcast($0) }
+            events.start()
         } catch {
             Self.log.error("command line unavailable: \(error.description, privacy: .public)")
         }

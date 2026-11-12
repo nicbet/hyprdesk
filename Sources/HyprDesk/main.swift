@@ -8,7 +8,7 @@ import WindowKit
 
 enum HyprDesk {
     static let name = "HyprDesk"
-    static let version = "0.3.3"
+    static let version = "0.4.0"
 }
 
 // `hyprdesk <command>`: the command line, asking the running app (see `Commands`). Prints JSON;
@@ -29,6 +29,24 @@ if CommandLine.arguments.count > 1, Command.isCommand(CommandLine.arguments[1]) 
         }
     } catch {
         fail(error.description, code: 1)
+    }
+    if case .subscribe? = try? Command.parse(args) {
+        // One compact JSON value per line, each written as it comes, until HyprDesk quits.
+        do {
+            var first = true
+            try ControlSocket.stream(args) { line in
+                if first, let answer = try? JSONDecoder().decode(JSON.self, from: line), answer["ok"] != true {
+                    FileHandle.standardOutput.write(line + Data("\n".utf8))
+                    exit(1)
+                }
+                first = false
+                FileHandle.standardOutput.write(line + Data("\n".utf8))
+                return true
+            }
+            exit(0)
+        } catch {
+            fail(error.description, code: 2)
+        }
     }
     do {
         let answer = try ControlSocket.send(args)
