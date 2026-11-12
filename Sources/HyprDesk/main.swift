@@ -8,7 +8,7 @@ import WindowKit
 
 enum HyprDesk {
     static let name = "HyprDesk"
-    static let version = "0.3.2"
+    static let version = "0.3.3"
 }
 
 // `hyprdesk <command>`: the command line, asking the running app (see `Commands`). Prints JSON;
@@ -137,6 +137,7 @@ func exposeSnapshot(to dir: URL) throws -> URL {
     model.begin(windows, title: "hyprdesk", screen: CGRect(origin: .zero, size: size))
     for (index, sample) in samples.enumerated() { model.images[CGWindowID(index + 1)] = placeholder(sample.3.size, color: sample.4) }
     model.setExpanded(true)
+    model.isSettled = true
     model.selection = 1
     let content = ExposeView(model: model).frame(width: size.width, height: size.height)
         .background(LinearGradient(colors: [Color(red: 0.2, green: 0.35, blue: 0.5), Color(red: 0.45, green: 0.3, blue: 0.4)],

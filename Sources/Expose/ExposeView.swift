@@ -47,6 +47,7 @@ public struct ExposeView: View {
                             if case .active = phase, model.pointer.allows(at: NSEvent.mouseLocation) { model.selection = index }
                         }
                         .onTapGesture { model.pick(index) }
+                        .zIndex(model.selection == index ? 1 : 0)
                         .scaleEffect(x: expanded ? 1 : start.width / max(1, target.width),
                                      y: expanded ? 1 : start.height / max(1, target.height))
                         .offset(x: expanded ? 0 : start.midX - target.midX, y: expanded ? 0 : start.midY - target.midY)
@@ -108,13 +109,15 @@ private struct Thumbnail: View {
                     .opacity(isSettled ? 1 : 0)
             }
             .overlay(alignment: .bottom) {
-                if isSelected && isSettled {
+                // Every window is labelled; the selected one stands out and may run wider than its
+                // thumbnail (it's drawn above its neighbours), the rest stay within their own.
+                if isSettled {
                     Text(window.title.isEmpty ? window.appName : window.title)
                         .font(.system(size: 13, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                        .foregroundStyle(isSelected ? .primary : .secondary)
                         .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Color(white: 0.16).opacity(0.92), in: Capsule())
-                        .frame(maxWidth: max(160, size.width + 80))
-                        .fixedSize()
+                        .background(Color(white: isSelected ? 0.22 : 0.12).opacity(0.92), in: Capsule())
+                        .frame(width: isSelected ? max(160, size.width + 80) : max(60, size.width))
                         .offset(y: 54)
                 }
             }

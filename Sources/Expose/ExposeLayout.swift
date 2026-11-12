@@ -15,9 +15,11 @@ public enum ExposeLayout {
 
     /// `frames`: the windows' real frames (for their sizes and their order). `ids`: stable
     /// tie-breakers, one per frame. `centering`: the index of the window for the middle cell.
-    /// `bounds`: the area to fill. `labelHeight`: room kept under each thumbnail.
+    /// `bounds`: the area to fill. `labelHeight`: room kept under each thumbnail, besides `spacing`:
+    /// the app icon hangs 18 pt below a thumbnail and its title ends 54 pt below, and the
+    /// selected thumbnail grows a little, so the default keeps a title clear of the row under it.
     public static func layout(_ frames: [CGRect], ids: [UInt32]? = nil, centering center: Int? = nil, in bounds: CGRect,
-                              spacing: CGFloat = 28, labelHeight: CGFloat = 26) -> Result {
+                              spacing: CGFloat = 28, labelHeight: CGFloat = 48) -> Result {
         let count = frames.count
         guard count > 0, bounds.width > 0, bounds.height > 0 else { return Result(frames: [], rows: 0, columns: 0) }
 
