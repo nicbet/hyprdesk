@@ -52,12 +52,13 @@ HyprDesk needs macOS 15 and Xcode 16 (or the Swift 6 toolchain). There's no pack
 git clone https://github.com/nicbet/hyprdesk.git && cd hyprdesk
 make signing-cert   # once: a local signing certificate, so permissions survive rebuilds
 make run            # builds build/HyprDesk.app and launches it
-make install-cli    # optional: the `hyprdesk` command, in ~/.local/bin
+make install-cli    # optional: the `hyprdesk` command, in ~/.local/bin (or see step 4)
 ```
 
 1. **Allow Accessibility** when asked: HyprDesk needs it to see, move and focus windows. Screen Recording is optional; it adds window pictures to ⌃↓ and the scratchpad's backdrop.
 2. **Pick a hyper key.** HyprDesk's own shortcuts use ✦, the hyper key: ⌃⌥⌘ held together. In Manage Workspaces ▸ Shortcuts, turn Caps Lock or a right-hand ⌘, ⌥ or ⌃ into one; it then works as ⌃⌥⌘ in every app, until HyprDesk quits. Already have a hyper key from Raycast or Karabiner-Elements? Leave the setting off and keep yours, as long as it doesn't include Shift: ✦ ⇧ means "move".
 3. **Make workspaces** from the menu-bar icon ▸ Manage Workspaces…, then press ✦ 1, ✦ 2 and so on. New windows join the workspace you're in.
+4. **Want the command line?** Menu-bar icon ▸ Install Command Line Tool… puts `hyprdesk` in /usr/local/bin, which every shell already looks in. macOS asks for an administrator's password if your account can't write there. It runs that copy of HyprDesk, so install again if you move the app. Once installed, the item reads Remove Command Line Tool…, which takes the command away and leaves the app alone.
 
 ## Shortcuts
 
