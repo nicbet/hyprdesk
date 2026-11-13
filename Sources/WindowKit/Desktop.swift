@@ -11,6 +11,13 @@ public enum Desktop {
         return Set(list.compactMap { $0[kCGWindowNumber as String] as? CGWindowID })
     }
 
+    /// Whether the lock screen is up. While it is, Accessibility lists no windows at all, yet the
+    /// window server still counts them on screen behind it: neither listing can be believed.
+    public static func isScreenLocked() -> Bool {
+        let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+        return session?["CGSSessionScreenIsLocked"] as? Bool ?? false
+    }
+
     /// Whether the desktop on screen is the one holding `home` (the windows HyprDesk knew
     /// there, minimized ones left out: they're never on screen). At least half of them must be
     /// on screen: windows assigned to every desktop show everywhere, so one isn't enough. With

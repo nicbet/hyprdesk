@@ -65,6 +65,8 @@ public final class WorkspaceEngine {
     /// The displays (or the whole Mac) are asleep: nothing to check until they wake.
     @ObservationIgnored private var screensAsleep = false
     @ObservationIgnored private var systemAsleep = false
+    /// The lock screen is up (told so by macOS): nothing to check until it's unlocked.
+    @ObservationIgnored private var screenLocked = false
     /// A display change happened and isn't settled: the screens may be missing or a stand-in.
     @ObservationIgnored private var displaysUnsettled = false
     /// The shown windows' frames, and the screens, from just before the displays changed: macOS
@@ -519,6 +521,13 @@ public final class WorkspaceEngine {
     private func windowsChanged(_ windows: [WindowInfo]) {
         // Another desktop's listing (or one taken mid-slide): not ours to act on.
         guard !desktopUnsettled else { return }
+        // Locked: the listing is empty, and taken at its word every window would lose its
+        // workspace. Caught here too in case it comes before the lock notification.
+        if Desktop.isScreenLocked() {
+            screenLocked = true
+            displaysDidChange("locked (seen in a listing)")
+            return
+        }
         homeWindows = Set(windows.filter { !$0.isMinimized }.map(\.id))
         if let recovery {
             self.recovery = nil
@@ -572,6 +581,13 @@ public final class WorkspaceEngine {
             guard !Task.isCancelled else { return }
             // Waking (the displays, or the Mac) checks again.
             guard !screensAsleep, !systemAsleep, !NSScreen.screens.isEmpty else { return }
+            // On the lock screen (waking to it, say) the windows still count as on screen, but
+            // none are listed. Unlocking checks again; told it's unlocked but still locked, retry.
+            if Desktop.isScreenLocked() {
+                Self.log.info("screen locked: waiting for unlock")
+                if !screenLocked { handOff(checkAfter: Self.displaySettle) }
+                return
+            }
             // Other screens than before: likely still arriving. Wait (a while) for the real ones.
             if displaysUnsettled, let before = beforeDisplayChange,
                !Self.sameScreens(before.screens, ScreenGeometry.screens()) {
@@ -615,8 +631,9 @@ public final class WorkspaceEngine {
         observe(workspace, NSWorkspace.willSleepNotification) { $0.systemAsleep = true; $0.displaysDidChange("going to sleep") }
         observe(workspace, NSWorkspace.didWakeNotification) { $0.systemAsleep = false; $0.displaysDidChange("woke") }
         observe(.default, NSApplication.didChangeScreenParametersNotification) { $0.displaysDidChange("screens changed") }
-        // After waking to the lock screen, the windows may not count as on screen until unlocked.
-        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { $0.displaysDidChange("unlocked") }
+        // While locked, Accessibility lists no windows: hands off until unlocked.
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsLocked")) { $0.screenLocked = true; $0.displaysDidChange("locked") }
+        observe(DistributedNotificationCenter.default(), Notification.Name("com.apple.screenIsUnlocked")) { $0.screenLocked = false; $0.displaysDidChange("unlocked") }
     }
 
     /// The displays slept, woke or changed. Whatever is listed until they settle may be wrong
